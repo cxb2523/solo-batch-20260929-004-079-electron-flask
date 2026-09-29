@@ -11,5 +11,8 @@
 
   <body>
     {% block body %} {% endblock %}
+    {% block scripts %}
+    <script src="{{ url_for('home.renderer_script') }}"></script>
+    {% endblock %}
   </body>
 </html>

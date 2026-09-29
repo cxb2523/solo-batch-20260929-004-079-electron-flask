@@ -1,5 +1,73 @@
 {% extends "base.html" %}
 {% block title %}Home{% endblock %}
 {% block body %}
-        HELLO WORLD!
+<main class="page">
+  <h1>首页</h1>
+  <p>欢迎使用 Electron + Flask 示例应用。</p>
+
+  <section
+    class="system-info"
+    id="system-info-panel"
+    data-state="idle"
+  >
+    <button
+      type="button"
+      id="system-info-button"
+      class="system-info__button"
+    >
+      获取系统信息
+    </button>
+
+    <div
+      class="system-info__state system-info__state--loading"
+      id="system-info-loading"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <span class="spinner" aria-hidden="true"></span>
+      <span>正在获取系统信息…</span>
+    </div>
+
+    <div
+      class="system-info__state system-info__state--success"
+      id="system-info-success"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <h2>系统信息</h2>
+      <dl class="system-info__list">
+        <div class="system-info__row">
+          <dt>Python 版本</dt>
+          <dd id="result-python-version"></dd>
+        </div>
+        <div class="system-info__row">
+          <dt>Python 实现</dt>
+          <dd id="result-python-implementation"></dd>
+        </div>
+        <div class="system-info__row">
+          <dt>平台</dt>
+          <dd id="result-platform"></dd>
+        </div>
+        <div class="system-info__row">
+          <dt>时间戳</dt>
+          <dd id="result-timestamp"></dd>
+        </div>
+      </dl>
+      <button type="button" class="js-system-info-retry">刷新</button>
+    </div>
+
+    <div
+      class="system-info__state system-info__state--error"
+      id="system-info-error"
+      role="alert"
+      aria-live="polite"
+      hidden
+    >
+      <p class="system-info__error-text" id="system-info-error-message"></p>
+      <button type="button" class="js-system-info-retry">重试</button>
+    </div>
+  </section>
+</main>
 {% endblock %}

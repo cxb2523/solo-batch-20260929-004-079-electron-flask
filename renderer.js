@@ -1,135 +1,126 @@
 "use strict";
 
-const { app, BrowserWindow } = require("electron");
-const path = require("path");
+// Browser side script (served by Flask at /renderer.js). Talks to the
+// Electron main process exclusively through the preload-exposed window.api.
+(function () {
+  const EXPECTED_FIELDS = [
+    "python_version",
+    "python_implementation",
+    "platform",
+    "timestamp",
+  ];
 
-// Keep a global reference of the mainWindowdow object, if you don't, the mainWindowdow will
-// be closed automatically when the JavaScript object is garbage collected.
-let mainWindow = null;
-let subpy = null;
+  // At most one request in flight. Repeated clicks reuse this same promise.
+  let pendingPromise = null;
 
-const PY_DIST_FOLDER = "dist-python"; // python distributable folder
-const PY_SRC_FOLDER = "web_app"; // path to the python source
-const PY_MODULE = "run_app.py"; // the name of the main module
+  const els = {};
 
-const isRunningInBundle = () => {
-  return require("fs").existsSync(path.join(__dirname, PY_DIST_FOLDER));
-};
-
-const getPythonScriptPath = () => {
-  if (!isRunningInBundle()) {
-    return path.join(__dirname, PY_SRC_FOLDER, PY_MODULE);
-  }
-  if (process.platform === "win32") {
-    return path.join(
-      __dirname,
-      PY_DIST_FOLDER,
-      PY_MODULE.slice(0, -3) + ".exe"
+  const hasValidData = (result) =>
+    result &&
+    result.ok === true &&
+    typeof result.data === "object" &&
+    result.data !== null &&
+    EXPECTED_FIELDS.every(
+      (field) =>
+        typeof result.data[field] === "string" &&
+        result.data[field].length > 0
     );
-  }
-  return path.join(__dirname, PY_DIST_FOLDER, PY_MODULE);
-};
 
-const startPythonSubprocess = () => {
-  let script = getPythonScriptPath();
-  if (isRunningInBundle()) {
-    subpy = require("child_process").execFile(script, []);
-  } else {
-    subpy = require("child_process").spawn("python", [script]);
-  }
-};
+  const setState = (state) => {
+    els.panel.dataset.state = state;
+    els.loading.hidden = state !== "loading";
+    els.success.hidden = state !== "success";
+    els.error.hidden = state !== "error";
+  };
 
-const killPythonSubprocesses = (main_pid) => {
-  const python_script_name = path.basename(getPythonScriptPath());
-  let cleanup_completed = false;
-  const psTree = require("ps-tree");
-  psTree(main_pid, function (err, children) {
-    let python_pids = children
-      .filter(function (el) {
-        return el.COMMAND == python_script_name;
-      })
-      .map(function (p) {
-        return p.PID;
+  const renderSuccess = (data) => {
+    els.resultVersion.textContent = data.python_version;
+    els.resultImplementation.textContent = data.python_implementation;
+    els.resultPlatform.textContent = data.platform;
+    els.resultTimestamp.textContent = data.timestamp;
+    setState("success");
+  };
+
+  const renderError = (result) => {
+    const message =
+      result &&
+      result.error &&
+      typeof result.error.message === "string" &&
+      result.error.message
+        ? result.error.message
+        : "获取系统信息失败，请稍后重试。";
+    els.errorMessage.textContent = message;
+    setState("error");
+  };
+
+  const requestSystemInfo = () => {
+    if (pendingPromise) {
+      return pendingPromise;
+    }
+    if (!window.api || !window.api.systemInfo || !window.api.systemInfo.get) {
+      renderError({
+        ok: false,
+        error: { message: "系统信息桥接 API 不可用。" },
       });
-    // kill all the spawned python processes
-    python_pids.forEach(function (pid) {
-      process.kill(pid);
+      return Promise.resolve();
+    }
+
+    els.button.disabled = true;
+    setState("loading");
+
+    pendingPromise = Promise.resolve()
+      .then(() => window.api.systemInfo.get())
+      .then((result) => {
+        if (hasValidData(result)) {
+          renderSuccess(result.data);
+        } else {
+          // Main process validation already catches bad payloads; this is
+          // the renderer-side defense for malformed IPC responses.
+          renderError(
+            result && result.ok === false
+              ? result
+              : {
+                  ok: false,
+                  error: { message: "IPC 返回的数据格式不正确。" },
+                }
+          );
+        }
+      })
+      .catch(() => {
+        renderError({
+          ok: false,
+          error: { message: "IPC 调用失败，请重试。" },
+        });
+      })
+      .finally(() => {
+        pendingPromise = null;
+        els.button.disabled = false;
+      });
+
+    return pendingPromise;
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    els.panel = document.getElementById("system-info-panel");
+    els.button = document.getElementById("system-info-button");
+    if (!els.panel || !els.button) {
+      return;
+    }
+    els.loading = document.getElementById("system-info-loading");
+    els.success = document.getElementById("system-info-success");
+    els.error = document.getElementById("system-info-error");
+    els.errorMessage = document.getElementById("system-info-error-message");
+    els.resultVersion = document.getElementById("result-python-version");
+    els.resultImplementation = document.getElementById(
+      "result-python-implementation"
+    );
+    els.resultPlatform = document.getElementById("result-platform");
+    els.resultTimestamp = document.getElementById("result-timestamp");
+    els.retryButtons = document.querySelectorAll(".js-system-info-retry");
+
+    els.button.addEventListener("click", requestSystemInfo);
+    els.retryButtons.forEach((retryButton) => {
+      retryButton.addEventListener("click", requestSystemInfo);
     });
-    subpy = null;
-    cleanup_completed = true;
   });
-  return new Promise(function (resolve, reject) {
-    (function waitForSubProcessCleanup() {
-      if (cleanup_completed) return resolve();
-      setTimeout(waitForSubProcessCleanup, 30);
-    })();
-  });
-};
-
-const createMainWindow = () => {
-  // Create the browser mainWindow
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    // transparent: true, // transparent header bar
-    icon: __dirname + "/icon.png",
-    // fullscreen: true,
-    // opacity:0.8,
-    // darkTheme: true,
-    // frame: false,
-    resizeable: true,
-  });
-
-  // Load the index page
-  mainWindow.loadURL("http://localhost:4040/");
-
-  // Open the DevTools.
-  //mainWindow.webContents.openDevTools();
-
-  // Emitted when the mainWindow is closed.
-  mainWindow.on("closed", function () {
-    // Dereference the mainWindow object
-    mainWindow = null;
-  });
-};
-
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on("ready", function () {
-  // start the backend server
-  startPythonSubprocess();
-  createMainWindow();
-});
-
-// disable menu
-app.on("browser-window-created", function (e, window) {
-  window.setMenu(null);
-});
-
-// Quit when all windows are closed.
-app.on("window-all-closed", () => {
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== "darwin") {
-    let main_process_pid = process.pid;
-    killPythonSubprocesses(main_process_pid).then(() => {
-      app.quit();
-    });
-  }
-});
-
-app.on("activate", () => {
-  // On macOS it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (subpy == null) {
-    startPythonSubprocess();
-  }
-  if (win === null) {
-    createMainWindow();
-  }
-});
-
-app.on("quit", function () {
-  // do some additional cleanup
-});
+})();
