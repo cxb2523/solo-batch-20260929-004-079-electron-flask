@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Home{% endblock %}
 {% block body %}
-        HELLO WORLD!
+        <h1>HELLO WORLD!</h1>
+        <button id="system-info-btn" type="button">获取系统信息</button>
+        <div id="system-info-result" data-state="idle"></div>
+        <script
+          src="{{ url_for('static', filename='js/system-info.js') }}"
+          defer
+        ></script>
 {% endblock %}

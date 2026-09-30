@@ -1,7 +1,8 @@
 "use strict";
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
+const { registerSystemInfoIpc } = require("./package_python.js");
 
 // Keep a global reference of the mainWindowdow object, if you don't, the mainWindowdow will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -78,6 +79,11 @@ const createMainWindow = () => {
     // darkTheme: true,
     // frame: false,
     resizeable: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
 
   // Load the index page
@@ -99,6 +105,7 @@ const createMainWindow = () => {
 app.on("ready", function () {
   // start the backend server
   startPythonSubprocess();
+  registerSystemInfoIpc(ipcMain);
   createMainWindow();
 });
 
